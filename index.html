@@ -1,0 +1,659 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcoustiGuard | Machine Fault Monitoring</title>
+
+<style>
+:root {
+  --bg: #0b1220;
+  --panel: #141f32;
+  --line: #293851;
+  --text: #edf4ff;
+  --muted: #9cacc4;
+  --green: #36d399;
+  --red: #ff647c;
+  --blue: #69a7ff;
+  --orange: #ffb454;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+header {
+  padding: 22px 5%;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+h1 { font-size: 24px; margin: 0; }
+header p { color: var(--muted); margin: 6px 0 0; font-size: 13px; }
+main { max-width: 1150px; margin: auto; padding: 25px 18px; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 20px;
+  min-width: 0;
+}
+.panel h2 { font-size: 17px; margin: 0 0 18px; }
+.muted { color: var(--muted); font-size: 13px; line-height: 1.55; }
+.badge {
+  display: inline-block;
+  border-radius: 20px;
+  background: #263650;
+  padding: 7px 11px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 19px;
+  font-weight: bold;
+}
+.dot {
+  width: 11px; height: 11px;
+  border-radius: 50%; background: #78879d;
+}
+.dot.live { background: var(--green); box-shadow: 0 0 12px var(--green); }
+.dot.alert { background: var(--red); box-shadow: 0 0 12px var(--red); }
+.big { font-size: 37px; font-weight: bold; margin: 13px 0; }
+.track { height: 12px; background: #263650; border-radius: 8px; overflow: hidden; }
+#meter { height: 100%; width: 0; background: var(--green); transition: width .1s; }
+button {
+  border: 0; border-radius: 9px; padding: 12px 15px;
+  cursor: pointer; font-weight: bold; font-size: 14px;
+}
+button:disabled { opacity: .45; cursor: not-allowed; }
+.primary { background: var(--blue); color: #071426; }
+.secondary { background: #263650; color: var(--text); }
+.danger { background: #542533; color: #ffdce2; }
+.actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 17px; }
+input[type="range"] { width: 100%; margin: 17px 0; accent-color: var(--blue); }
+input[type="checkbox"] { accent-color: var(--blue); }
+.alertbox {
+  border: 1px solid var(--line);
+  padding: 14px; border-radius: 10px; margin-top: 15px;
+  line-height: 1.55; font-size: 14px;
+}
+.alertbox.good { border-color: #24694f; background: #102e28; }
+.alertbox.warning { border-color: var(--red); background: #351b29; }
+.event {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px; line-height: 1.5;
+}
+.event:last-child { border-bottom: 0; }
+.event.alert-event strong { color: var(--red); }
+footer { color: var(--muted); font-size: 12px; line-height: 1.7; padding: 22px 0; }
+@media (max-width: 680px) {
+  .grid { grid-template-columns: 1fr; }
+  header { align-items: flex-start; flex-direction: column; }
+  h1 { font-size: 21px; }
+}
+</style>
+</head>
+
+<body>
+<header>
+  <div>
+    <h1>🛡️ AcoustiGuard</h1>
+    <p>Early Machine Fault Detection Using Acoustic Signals</p>
+  </div>
+  <span class="badge" id="connection">MICROPHONE OFF</span>
+</header>
+
+<main>
+  <div class="grid">
+
+    <section class="panel">
+      <h2>Machine Monitoring</h2>
+      <div class="status">
+        <span class="dot" id="dot"></span>
+        <span id="status">Monitoring stopped</span>
+      </div>
+      <p class="muted" id="substatus">
+        Start monitoring and allow microphone access.
+      </p>
+
+      <div class="actions">
+        <button class="primary" id="start">▶ Start Monitoring</button>
+        <button class="secondary" id="stop" disabled>■ Stop Monitoring</button>
+      </div>
+
+      <div id="notice" class="alertbox" role="status" aria-live="polite">
+        Waiting for microphone input.
+      </div>
+
+      <div class="actions">
+        <button class="danger" id="acknowledge" disabled>
+          ✓ Acknowledge Alert / Stop Buzzer
+        </button>
+      </div>
+      <p class="muted">
+        Acknowledging silences the buzzer. Monitoring continues, so a new
+        alert can sound if the condition persists or occurs again.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Live Acoustic Level</h2>
+      <div class="muted">Relative microphone sound level</div>
+      <div class="big"><span id="db">—</span> <span style="font-size:15px">dBFS</span></div>
+      <div class="track"><div id="meter"></div></div>
+      <p class="muted">
+        dBFS is a relative digital level, not a calibrated sound-pressure
+        measurement.
+      </p>
+
+      <div style="margin-top:22px">
+        <label for="threshold">
+          Alert threshold: <strong id="thresholdText">-20 dBFS</strong>
+        </label>
+        <input id="threshold" type="range" min="-60" max="-5" value="-20">
+        <p class="muted">
+          An alert is triggered when sound remains above this threshold
+          for approximately one second.
+        </p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Alert Settings</h2>
+
+      <p><label>
+        <input type="checkbox" id="soundAlert" checked>
+        Automatic audible buzzer
+      </label></p>
+
+      <p><label>
+        <input type="checkbox" id="browserAlert">
+        Browser notifications
+      </label></p>
+
+      <div class="actions">
+        <button class="secondary" id="test">🔔 Test Alert</button>
+        <button class="secondary" id="enableNotifications">
+          Enable Notifications
+        </button>
+      </div>
+
+      <p class="muted">
+        Browser notifications require permission. Sound playback depends
+        on the browser and device audio settings.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Event History</h2>
+      <div class="status">
+        <span class="dot"></span>
+        <span id="eventCount">0 events</span>
+      </div>
+      <div id="events" style="margin-top:10px">
+        <p class="muted">No events recorded yet.</p>
+      </div>
+      <div class="actions">
+        <button class="secondary" id="clear">Clear History</button>
+      </div>
+    </section>
+
+  </div>
+
+  <footer>
+    <strong>Prototype limitations:</strong>
+    This version detects sustained high microphone amplitude, not a
+    confirmed mechanical fault. Loud background noise can cause false
+    alerts. Actual fault classification requires a trained and validated
+    model using representative machine audio. Keep the page open while
+    monitoring. Do not use this prototype as a safety-critical alarm.
+  </footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+let stream = null;
+let audioContext = null;
+let analyser = null;
+let source = null;
+let buffer = null;
+let raf = null;
+let running = false;
+
+let aboveSince = null;
+let lastAlert = 0;
+let alertActive = false;
+let acknowledged = false;
+let events = [];
+
+let buzzerTimer = null;
+let buzzerOscillator = null;
+let buzzerGain = null;
+let nextBeepOn = false;
+
+const ALERT_DURATION_MS = 1000;
+const ALERT_REPEAT_MS = 8000;
+const BEEP_INTERVAL_MS = 350;
+
+$("threshold").addEventListener("input", () => {
+  $("thresholdText").textContent = $("threshold").value + " dBFS";
+});
+
+// Initialize the buzzer audio graph from a user click.
+// Keeping one oscillator connected avoids creating many audio nodes.
+async function prepareBuzzer() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    buzzerOscillator = audioContext.createOscillator();
+    buzzerGain = audioContext.createGain();
+
+    buzzerOscillator.type = "square";
+    buzzerOscillator.frequency.value = 1000;
+    buzzerGain.gain.value = 0;
+
+    buzzerOscillator.connect(buzzerGain);
+    buzzerGain.connect(audioContext.destination);
+    buzzerOscillator.start();
+  }
+
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+}
+
+function startBuzzer() {
+  if (!$("soundAlert").checked || buzzerTimer) return;
+
+  if (!audioContext || audioContext.state !== "running") {
+    $("notice").textContent +=
+      " Audio may be blocked; click Test Alert or Start Monitoring again.";
+    return;
+  }
+
+  nextBeepOn = false;
+
+  function beep() {
+    if (!buzzerGain || !audioContext || !running && !alertActive) return;
+
+    nextBeepOn = !nextBeepOn;
+    const now = audioContext.currentTime;
+
+    buzzerGain.gain.cancelScheduledValues(now);
+    buzzerGain.gain.setTargetAtTime(nextBeepOn ? 0.15 : 0, now, 0.01);
+  }
+
+  beep();
+  buzzerTimer = setInterval(beep, BEEP_INTERVAL_MS);
+}
+
+function stopBuzzer() {
+  if (buzzerTimer) {
+    clearInterval(buzzerTimer);
+    buzzerTimer = null;
+  }
+
+  if (buzzerGain && audioContext) {
+    const now = audioContext.currentTime;
+    buzzerGain.gain.cancelScheduledValues(now);
+    buzzerGain.gain.setTargetAtTime(0, now, 0.01);
+  }
+}
+
+function setStatus(text, mode = "") {
+  $("status").textContent = text;
+  $("dot").className = "dot " + mode;
+}
+
+function addEvent(message, type = "info") {
+  events.unshift({
+    time: new Date().toLocaleTimeString(),
+    message,
+    type
+  });
+
+  events = events.slice(0, 40);
+  renderEvents();
+}
+
+function renderEvents() {
+  $("eventCount").textContent =
+    events.length + (events.length === 1 ? " event" : " events");
+
+  $("events").replaceChildren();
+
+  if (!events.length) {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "No events recorded yet.";
+    $("events").append(p);
+    return;
+  }
+
+  for (const item of events) {
+    const div = document.createElement("div");
+    div.className = "event" +
+      (item.type === "alert" ? " alert-event" : "");
+
+    const strong = document.createElement("strong");
+    strong.textContent = item.time + " — " + item.message;
+
+    div.append(strong);
+    $("events").append(div);
+  }
+}
+
+async function sendBrowserNotification(message) {
+  if (!$("browserAlert").checked || !("Notification" in window)) return;
+
+  try {
+    if (Notification.permission === "granted") {
+      new Notification("AcoustiGuard Alert", {
+        body: message,
+        tag: "acoustiguard-alert"
+      });
+    } else if (Notification.permission === "default") {
+      const permission = await Notification.requestPermission();
+
+      if (permission === "granted") {
+        new Notification("AcoustiGuard Alert", {
+          body: message,
+          tag: "acoustiguard-alert"
+        });
+      }
+    }
+  } catch (error) {
+    console.warn("Browser notification unavailable:", error);
+  }
+}
+
+async function notifyUser(message) {
+  alertActive = true;
+  acknowledged = false;
+
+  $("notice").className = "alertbox warning";
+  $("notice").textContent = "🚨 POSSIBLE FAULT ALERT: " + message;
+  $("acknowledge").disabled = false;
+  setStatus("POSSIBLE FAULT", "alert");
+
+  addEvent("Possible acoustic anomaly: " + message, "alert");
+
+  // Start the buzzer automatically when the alert is raised.
+  startBuzzer();
+
+  // Attempt to notify the user at the same time.
+  await sendBrowserNotification(message);
+}
+
+function clearAlertDisplay() {
+  alertActive = false;
+  acknowledged = false;
+  stopBuzzer();
+
+  $("acknowledge").disabled = true;
+  $("notice").className = "alertbox good";
+  $("notice").textContent = "Sound level is below the configured threshold.";
+
+  if (running) setStatus("Monitoring normally", "live");
+}
+
+function monitor() {
+  if (!running || !analyser || !buffer) return;
+
+  analyser.getFloatTimeDomainData(buffer);
+
+  let sum = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    sum += buffer[i] * buffer[i];
+  }
+
+  const rms = Math.sqrt(sum / buffer.length);
+  const dbfs = rms > 0 ? 20 * Math.log10(rms) : -100;
+
+  $("db").textContent = dbfs <= -99 ? "< -99" : dbfs.toFixed(1);
+
+  const shown = Math.max(-60, Math.min(0, dbfs));
+  $("meter").style.width = ((shown + 60) / 60 * 100) + "%";
+  $("meter").style.background =
+    dbfs >= Number($("threshold").value) ? "var(--red)" : "var(--green)";
+
+  const now = Date.now();
+  const limit = Number($("threshold").value);
+
+  if (dbfs >= limit) {
+    if (aboveSince === null) aboveSince = now;
+
+    if (
+      now - aboveSince >= ALERT_DURATION_MS &&
+      now - lastAlert >= ALERT_REPEAT_MS
+    ) {
+      lastAlert = now;
+      notifyUser(
+        "Microphone level remained above " + limit + " dBFS."
+      );
+    }
+  } else {
+    aboveSince = null;
+
+    // Clear the active alert when the sound drops below threshold.
+    if (alertActive) {
+      clearAlertDisplay();
+      addEvent("Sound returned below threshold");
+    } else if (!alertActive) {
+      setStatus("Monitoring normally", "live");
+    }
+  }
+
+  raf = requestAnimationFrame(monitor);
+}
+
+$("start").addEventListener("click", async () => {
+  if (running) return;
+
+  $("start").disabled = true;
+
+  try {
+    // User gesture prepares audio playback before an alert occurs.
+    await prepareBuzzer();
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error(
+        "Microphone access requires HTTPS or localhost in a supported browser."
+      );
+    }
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      }
+    });
+
+    const audioInput = new MediaStreamAudioSourceNode(
+      audioContext,
+      { mediaStream: stream }
+    );
+
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    source = audioInput;
+    source.connect(analyser);
+    buffer = new Float32Array(analyser.fftSize);
+
+    running = true;
+    aboveSince = null;
+    lastAlert = 0;
+
+    $("connection").textContent = "MICROPHONE LIVE";
+    $("stop").disabled = false;
+    $("notice").className = "alertbox good";
+    $("notice").textContent =
+      "Monitoring started. Automatic alerts are enabled.";
+
+    setStatus("Monitoring normally", "live");
+    addEvent("Live microphone monitoring started");
+    monitor();
+
+  } catch (error) {
+    $("notice").className = "alertbox warning";
+    $("notice").textContent =
+      "Could not start monitoring: " + error.message;
+
+    addEvent("Monitoring failed to start");
+    console.error(error);
+
+  } finally {
+    $("start").disabled = running;
+  }
+});
+
+function stopMonitoring() {
+  running = false;
+
+  if (raf !== null) cancelAnimationFrame(raf);
+  raf = null;
+
+  stopBuzzer();
+
+  if (stream) stream.getTracks().forEach(track => track.stop());
+  if (audioContext) audioContext.close().catch(console.warn);
+
+  stream = null;
+  audioContext = null;
+  analyser = null;
+  source = null;
+  buffer = null;
+  buzzerOscillator = null;
+  buzzerGain = null;
+  buzzerTimer = null;
+
+  aboveSince = null;
+  alertActive = false;
+  acknowledged = false;
+
+  $("connection").textContent = "MICROPHONE OFF";
+  $("start").disabled = false;
+  $("stop").disabled = true;
+  $("acknowledge").disabled = true;
+  $("db").textContent = "—";
+  $("meter").style.width = "0";
+
+  setStatus("Monitoring stopped");
+  $("notice").className = "alertbox";
+  $("notice").textContent = "Microphone monitoring has stopped.";
+
+  addEvent("Live monitoring stopped");
+}
+
+$("stop").addEventListener("click", stopMonitoring);
+
+$("acknowledge").addEventListener("click", () => {
+  acknowledged = true;
+  stopBuzzer();
+
+  $("notice").className = "alertbox warning";
+  $("notice").textContent =
+    "Alert acknowledged. Check the machine before resuming operation.";
+
+  $("acknowledge").disabled = true;
+  addEvent("User acknowledged the alert");
+
+  // The sound detector remains active. A later alert can sound again.
+});
+
+$("test").addEventListener("click", async () => {
+  try {
+    // Test button is a user gesture, so it can initialize/resume audio.
+    await prepareBuzzer();
+
+    if (!running) {
+      // Test alerts work even when live monitoring is stopped.
+      running = false;
+      alertActive = true;
+      acknowledged = false;
+      $("acknowledge").disabled = false;
+      $("notice").className = "alertbox warning";
+      $("notice").textContent =
+        "🚨 TEST ALERT: This is a demonstration, not a confirmed machine fault.";
+      setStatus("TEST ALERT", "alert");
+      addEvent("Test alert triggered", "alert");
+      startBuzzer();
+
+      // Automatically end the test after 5 seconds unless acknowledged.
+      setTimeout(() => {
+        if (!running && alertActive) {
+          stopBuzzer();
+          alertActive = false;
+          $("acknowledge").disabled = true;
+          $("notice").className = "alertbox";
+          $("notice").textContent = "Test alert finished.";
+          setStatus("Monitoring stopped");
+        }
+      }, 5000);
+
+    } else {
+      await notifyUser(
+        "This is a test alert. No actual machine fault was verified."
+      );
+    }
+
+  } catch (error) {
+    $("notice").className = "alertbox warning";
+    $("notice").textContent =
+      "Could not play test buzzer: " + error.message;
+  }
+});
+
+$("enableNotifications").addEventListener("click", async () => {
+  if (!("Notification" in window)) {
+    $("notice").textContent =
+      "This browser does not support desktop notifications.";
+    return;
+  }
+
+  try {
+    const permission = await Notification.requestPermission();
+    $("notice").textContent =
+      permission === "granted"
+        ? "Browser notifications enabled."
+        : "Browser notification permission was not granted.";
+  } catch (error) {
+    $("notice").textContent = "Could not enable notifications.";
+  }
+});
+
+$("soundAlert").addEventListener("change", () => {
+  if (!$("soundAlert").checked) {
+    stopBuzzer();
+  } else if (alertActive && !acknowledged) {
+    startBuzzer();
+  }
+});
+
+$("clear").addEventListener("click", () => {
+  events = [];
+  renderEvents();
+});
+
+window.addEventListener("pagehide", () => {
+  if (stream) stream.getTracks().forEach(track => track.stop());
+  stopBuzzer();
+});
+</script>
+</body>
+</html>
